@@ -1,0 +1,6 @@
+{
+  "name": "Smart Agri AI",
+  "description": "Bilingual intelligent farming assistant with authentication, soil NPK crop recommendation, leaf disease detection, Tamil Nadu APMC market prices, and live/historical weather.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

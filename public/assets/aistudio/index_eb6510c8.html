@@ -1,0 +1,1293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Agri AI – Intelligent Farming Assistant</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&family=DM+Sans:wght@300;400;500;600&family=Noto+Sans+Tamil:wght@400;600;700&display=swap" rel="stylesheet">
+
+<!-- ══════════════════════════════════════
+     MOCK apiService  (replaces api.js)
+     Must be defined BEFORE the rest of the
+     page script so every call resolves cleanly.
+══════════════════════════════════════ -->
+<script>
+/* ── tiny helper ── */
+function _delay(ms){return new Promise(r=>setTimeout(r,ms));}
+
+/* ── crop pool ── */
+const _cropPool=[
+  {crop_name:"Rice",crop_name_ta:"நெல்",icon:"🌾",confidence:94,
+   description_en:"Rice thrives in your soil conditions. Optimal for alluvial soils with good water retention. Recommended season: Kharif (Jun–Nov). Expected yield: 4.5–5.2 tonnes/ha.",
+   description_ta:"நெல் உங்கள் மண் நிலைமைகளில் சிறப்பாக வளரும். வண்டல் மண்ணில் சிறந்தது. பரிந்துரை பருவம்: காரிஃப் (ஜூன்–நவம்பர்). எதிர்பார்க்கப்படும் விளைச்சல்: 4.5–5.2 டன்/ஹெக்."},
+  {crop_name:"Maize",crop_name_ta:"மக்காச்சோளம்",icon:"🌽",confidence:88,
+   description_en:"Maize suits your high potassium levels and moderate rainfall. Short duration variety (90 days). Expected yield: 5.5–7.0 tonnes/ha.",
+   description_ta:"மக்காச்சோளம் உங்கள் அதிக பொட்டாசியம் அளவிற்கு ஏற்றது. குறுகிய கால வகை (90 நாட்கள்). விளைச்சல்: 5.5–7.0 டன்/ஹெக்."},
+  {crop_name:"Groundnut",crop_name_ta:"நிலக்கடலை",icon:"🥜",confidence:81,
+   description_en:"Groundnut is excellent for sandy loam soils with good drainage. High oil content varieties available. Expected yield: 2.5–3.5 tonnes/ha.",
+   description_ta:"நிலக்கடலை மண் கலந்த மணல் மண்ணிற்கு சிறந்தது. எண்ணெய் அதிகமுள்ள வகைகள் கிடைக்கின்றன. விளைச்சல்: 2.5–3.5 டன்/ஹெக்."},
+  {crop_name:"Sugarcane",crop_name_ta:"கரும்பு",icon:"🎋",confidence:76,
+   description_en:"Sugarcane is ideal for high nitrogen and potassium rich soil. Long duration crop (12 months). Expected recovery: 10–12%.",
+   description_ta:"கரும்பு உங்கள் அதிக நைட்ரஜன் மற்றும் பொட்டாசியம் செறிவுள்ள மண்ணிற்கு சிறந்தது. நீண்ட கால பயிர் (12 மாதங்கள்)."},
+  {crop_name:"Banana",crop_name_ta:"வாழை",icon:"🍌",confidence:83,
+   description_en:"Banana requires rich alluvial soil and good irrigation. Highly profitable for Tamil Nadu delta regions. Expected yield: 40–50 tonnes/ha.",
+   description_ta:"வாழை செழிப்பான வண்டல் மண் மற்றும் நல்ல நீர்ப்பாசனம் தேவை. டெல்டா பகுதிகளில் லாபகரமானது. விளைச்சல்: 40–50 டன்/ஹெக்."},
+  {crop_name:"Turmeric",crop_name_ta:"மஞ்சள்",icon:"🌿",confidence:78,
+   description_en:"Turmeric grows excellently in loamy soil with high organic matter. High market demand. Expected yield: 20–25 tonnes/ha fresh rhizomes.",
+   description_ta:"மஞ்சள் உங்கள் கரிம பொருட்கள் நிறைந்த மண்ணில் சிறப்பாக வளரும். சந்தை தேவை அதிகமாக உள்ளது. விளைச்சல்: 20–25 டன்/ஹெக்."},
+  {crop_name:"Cotton",crop_name_ta:"பருத்தி",icon:"🌸",confidence:72,
+   description_en:"Cotton thrives in black cotton soil with moderate nutrients. Suitable for dry regions. Expected yield: 2.0–2.5 tonnes/ha lint.",
+   description_ta:"பருத்தி கருப்பு மண்ணில் நன்றாக வளரும். வறண்ட பகுதிகளுக்கு ஏற்றது. விளைச்சல்: 2.0–2.5 டன்/ஹெக்."}
+];
+
+function _selectCrop(n,p,k,ph){
+  if(n>100&&k>80)   return _cropPool[3];
+  if(ph<5.5)         return _cropPool[2];
+  if(n>80&&ph>=5.5&&ph<=7.5) return _cropPool[0];
+  if(k>60&&p>40)    return _cropPool[1];
+  if(ph>7.5)         return _cropPool[6];
+  return _cropPool[Math.abs(Math.round(n+p+k))%_cropPool.length];
+}
+
+/* ── disease pool ── */
+const _diseasePool=[
+  {disease_name:"Leaf Blast",disease_name_ta:"இலை பிளாஸ்ட்",severity:"high",confidence:91.4,
+   crop_name:"Rice (Oryza sativa)",crop_name_ta:"நெல் (Oryza sativa)",
+   treatment_en:"Apply Tricyclazole 75% WP at 0.6 g/L water. Remove and destroy infected leaves. Maintain field sanitation and avoid overhead irrigation.",
+   treatment_ta:"Tricyclazole 75% WP 0.6 கி/லி தண்ணீரில் கலந்து தெளிக்கவும். நோய்வாய்பட்ட இலைகளை அகற்றி அழிக்கவும். வயல் சுத்தம் பராமரிக்கவும்."},
+  {disease_name:"Powdery Mildew",disease_name_ta:"பொடி பூஞ்சாண நோய்",severity:"medium",confidence:88.7,
+   crop_name:"Wheat (Triticum aestivum)",crop_name_ta:"கோதுமை",
+   treatment_en:"Spray Carbendazim 50% WP at 1 g/L. Improve air circulation. Avoid excessive nitrogen fertilization.",
+   treatment_ta:"Carbendazim 50% WP 1 கி/லி தெளிக்கவும். காற்றோட்டம் மேம்படுத்தவும். அதிக நைட்ரஜன் உரம் தவிர்க்கவும்."},
+  {disease_name:"Late Blight",disease_name_ta:"தாமதமான கோட்டை நோய்",severity:"high",confidence:93.2,
+   crop_name:"Tomato (Solanum lycopersicum)",crop_name_ta:"தக்காளி",
+   treatment_en:"Apply Mancozeb 75% WP at 2.5 g/L. Remove and burn infected plant parts. Ensure proper drainage.",
+   treatment_ta:"Mancozeb 75% WP 2.5 கி/லி தெளிக்கவும். நோய்வாய்பட்ட பகுதிகளை அகற்றி எரிக்கவும். சரியான வடிகால் உறுதி செய்யவும்."},
+  {disease_name:"Bacterial Leaf Blight",disease_name_ta:"பாக்டீரியல் இலை கருகல்",severity:"medium",confidence:87.5,
+   crop_name:"Rice (Oryza sativa)",crop_name_ta:"நெல்",
+   treatment_en:"Use resistant varieties. Apply copper-based bactericide. Drain water from fields during peak infection.",
+   treatment_ta:"எதிர்ப்புள்ள வகைகளை பயன்படுத்தவும். செம்பு அடிப்படையிலான பாக்டீரிசைட் தெளிக்கவும். நோய் தீவிரமாக இருக்கும்போது வடிகட்டவும்."},
+  {disease_name:"Anthracnose",disease_name_ta:"அந்தராக்னோஸ்",severity:"low",confidence:84.1,
+   crop_name:"Banana (Musa spp.)",crop_name_ta:"வாழை",
+   treatment_en:"Remove infected plant parts. Apply Copper Oxychloride 50% WP at 3 g/L. Improve post-harvest handling.",
+   treatment_ta:"நோய்வாய்பட்ட பகுதிகளை அகற்றவும். Copper Oxychloride 50% WP 3 கி/லி தெளிக்கவும். அறுவடைக்கு பிறகான கையாளுதலை மேம்படுத்தவும்."}
+];
+
+/* ── market data ── */
+const _marketData=[
+  {crop:"Rice (Paddy)",  crop_ta:"நெல்",           price:2840, district:"Thanjavur",  change:"+120",up:true, date:"05 Jan 2025"},
+  {crop:"Sugarcane",     crop_ta:"கரும்பு",         price:3150, district:"Thanjavur",  change:"+60", up:true, date:"05 Jan 2025"},
+  {crop:"Groundnut",     crop_ta:"நிலக்கடலை",       price:5800, district:"Coimbatore", change:"+200",up:true, date:"05 Jan 2025"},
+  {crop:"Cotton",        crop_ta:"பருத்தி",          price:6420, district:"Coimbatore", change:"-80", up:false,date:"05 Jan 2025"},
+  {crop:"Banana",        crop_ta:"வாழை",            price:1850, district:"Madurai",    change:"+50", up:true, date:"04 Jan 2025"},
+  {crop:"Tomato",        crop_ta:"தக்காளி",          price:2200, district:"Salem",      change:"-150",up:false,date:"04 Jan 2025"},
+  {crop:"Onion",         crop_ta:"வெங்காயம்",        price:1980, district:"Madurai",    change:"+90", up:true, date:"04 Jan 2025"},
+  {crop:"Maize",         crop_ta:"மக்காச்சோளம்",     price:2100, district:"Salem",      change:"+40", up:true, date:"03 Jan 2025"},
+  {crop:"Turmeric",      crop_ta:"மஞ்சள்",           price:8500, district:"Erode",      change:"+300",up:true, date:"03 Jan 2025"},
+  {crop:"Chilli (Dry)",  crop_ta:"காய்ந்த மிளகாய்", price:12400,district:"Erode",      change:"-200",up:false,date:"03 Jan 2025"},
+  {crop:"Soybean",       crop_ta:"சோயாபீன்",         price:3820, district:"Coimbatore", change:"+110",up:true, date:"02 Jan 2025"},
+  {crop:"Coconut",       crop_ta:"தேங்காய்",          price:2650, district:"Thanjavur",  change:"+30", up:true, date:"02 Jan 2025"}
+];
+
+/* ── weather data ── */
+const _weatherData=[
+  {district:"Thanjavur",  condition:"⛅",condition_name:"Partly Cloudy",   condition_ta:"பாதி மேகம்",          temp:34,feels:37,humidity:78,rainfall:2.4,wind:18,advisory_en:"Good for irrigation. Monitor for pest activity.",            advisory_ta:"நீர்ப்பாசனத்திற்கு சிறந்தது. பூச்சி செயல்பாட்டை கண்காணிக்கவும்."},
+  {district:"Coimbatore", condition:"☀️",condition_name:"Sunny",           condition_ta:"வெயில்",              temp:31,feels:33,humidity:62,rainfall:0,  wind:22,advisory_en:"Low humidity — schedule morning irrigation.",                advisory_ta:"குறைந்த ஈரப்பதம் — காலை நீர்ப்பாசனம் திட்டமிடுங்கள்."},
+  {district:"Madurai",    condition:"🌧️",condition_name:"Light Rain",      condition_ta:"இலேசான மழை",         temp:29,feels:31,humidity:85,rainfall:8.6,wind:14,advisory_en:"Hold field operations. Check drainage.",                     advisory_ta:"வயல் பணிகளை நிறுத்துங்கள். வடிகால் சரிபார்க்கவும்."},
+  {district:"Salem",      condition:"🌤️",condition_name:"Mostly Sunny",    condition_ta:"பெரும்பாலும் வெயில்",temp:33,feels:35,humidity:65,rainfall:0.5,wind:16,advisory_en:"Suitable for harvesting. Good drying weather.",            advisory_ta:"அறுவடைக்கு ஏற்றது. நல்ல உலர்த்தல் வானிலை."},
+  {district:"Trichy",     condition:"⛅",condition_name:"Partly Cloudy",   condition_ta:"பாதி மேகம்",          temp:35,feels:38,humidity:72,rainfall:1.2,wind:20,advisory_en:"Monitor crop water stress.",                                 advisory_ta:"பயிர் நீர் அழுத்தத்தை கண்காணிக்கவும்."},
+  {district:"Vellore",    condition:"☀️",condition_name:"Sunny",           condition_ta:"வெயில்",              temp:32,feels:34,humidity:60,rainfall:0,  wind:25,advisory_en:"High UV — protect sensitive seedlings.",                     advisory_ta:"அதிக UV — மென்மையான நாற்றுகளை பாதுகாக்கவும்."},
+  {district:"Tirunelveli",condition:"🌦️",condition_name:"Scattered Showers",condition_ta:"சிதறிய மழை",      temp:30,feels:32,humidity:82,rainfall:5.3,wind:19,advisory_en:"Delay spraying activities. Check for waterlogging.",         advisory_ta:"தெளிப்பு செயல்பாடுகளை தாமதப்படுத்துங்கள். நீர்தேக்கம் சரிபார்க்கவும்."},
+  {district:"Erode",      condition:"☁️",condition_name:"Overcast",        condition_ta:"மேகமூட்டம்",          temp:28,feels:30,humidity:80,rainfall:3.8,wind:12,advisory_en:"Good for planting. Adequate moisture.",                     advisory_ta:"நடவுக்கு சிறந்தது. போதுமான ஈரப்பதம்."}
+];
+
+/* ══ GLOBAL apiService ══ */
+const apiService={
+  predictCrop:async function(params){
+    await _delay(900);
+    const r=_selectCrop(params.nitrogen,params.phosphorus,params.potassium,params.ph);
+    const j=Math.floor(Math.random()*7)-3;
+    return {...r,confidence:Math.min(99,Math.max(60,r.confidence+j))};
+  },
+  detectDisease:async function(imageFile){
+    await _delay(1200);
+    const idx=(imageFile?imageFile.name.length:0)%_diseasePool.length;
+    const r=_diseasePool[idx];
+    const j=parseFloat((Math.random()*4-2).toFixed(1));
+    return {...r,confidence:parseFloat(Math.min(99,Math.max(70,r.confidence+j)).toFixed(1))};
+  },
+  getMarketPrices:async function(district){
+    await _delay(400);
+    if(!district||district==="All") return[..._marketData];
+    return _marketData.filter(r=>r.district===district);
+  },
+  getWeatherData:async function(){
+    await _delay(500);
+    return[..._weatherData];
+  }
+};
+</script>
+
+<style>
+:root {
+  --green-deep:#0d3320;
+  --green-dark:#12492d;
+  --green-mid:#1a6b3f;
+  --green-bright:#2ea55a;
+  --green-light:#4fcb78;
+  --green-pale:#d4f0df;
+  --cream:#faf6ef;
+  --cream-dark:#f2ead8;
+  --gold:#d4a017;
+  --gold-light:#f0c040;
+  --gold-pale:#fdf3d0;
+  --white:#ffffff;
+  --text-dark:#0d1f14;
+  --text-mid:#2d4a35;
+  --text-muted:#5a7a62;
+  --radius-sm:8px;
+  --radius-md:14px;
+  --radius-lg:22px;
+  --radius-xl:32px;
+  --shadow-sm:0 2px 12px rgba(13,51,32,.10);
+  --shadow-md:0 8px 32px rgba(13,51,32,.15);
+  --shadow-lg:0 20px 60px rgba(13,51,32,.22);
+  --font-display:'Playfair Display',serif;
+  --font-body:'DM Sans',sans-serif;
+  --font-tamil:'Noto Sans Tamil','DM Sans',sans-serif;
+  --transition:.25s cubic-bezier(.4,0,.2,1);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:var(--font-body);background:var(--cream);color:var(--text-dark);overflow-x:hidden;line-height:1.6}
+body.tamil-mode{font-family:var(--font-tamil)}
+img{max-width:100%;display:block}
+button{cursor:pointer;border:none;outline:none;font-family:inherit}
+input,select,textarea{font-family:inherit;outline:none}
+a{text-decoration:none;color:inherit}
+
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:var(--green-deep)}
+::-webkit-scrollbar-thumb{background:var(--green-bright);border-radius:3px}
+
+.page-section{display:none}
+.page-section.active{display:block}
+
+/* ══ NAVBAR ══ */
+#navbar{position:fixed;top:0;left:0;right:0;z-index:1000;padding:0 2rem;height:68px;display:flex;align-items:center;justify-content:space-between;transition:var(--transition);}
+#navbar.scrolled{background:rgba(13,51,32,.97);backdrop-filter:blur(12px);box-shadow:0 2px 24px rgba(0,0,0,.3);}
+.nav-logo{display:flex;align-items:center;gap:.6rem;cursor:pointer}
+.nav-logo svg{width:32px;height:32px;flex-shrink:0}
+.nav-logo-text{font-family:var(--font-display);font-size:1.3rem;color:var(--white);font-weight:700;letter-spacing:-.02em}
+.nav-logo-text span{color:var(--gold-light)}
+.nav-links{display:flex;align-items:center;gap:.2rem}
+.nav-link{padding:.5rem 1rem;border-radius:var(--radius-sm);font-size:.9rem;font-weight:500;color:rgba(255,255,255,.82);transition:var(--transition);letter-spacing:.01em;cursor:pointer;background:none;border:none;}
+.nav-link:hover,.nav-link.active{color:var(--white);background:rgba(255,255,255,.1)}
+.nav-right{display:flex;align-items:center;gap:.75rem}
+.lang-toggle{display:flex;align-items:center;gap:.4rem;padding:.42rem .9rem;border-radius:30px;border:1.5px solid rgba(255,255,255,.3);color:var(--white);font-size:.82rem;font-weight:600;background:rgba(255,255,255,.08);cursor:pointer;transition:var(--transition);}
+.lang-toggle:hover{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.5)}
+.lang-toggle .flag{font-size:1rem}
+.btn-nav{padding:.52rem 1.3rem;border-radius:30px;background:linear-gradient(135deg,var(--green-bright),var(--green-light));color:var(--white);font-size:.88rem;font-weight:600;box-shadow:0 4px 14px rgba(46,165,90,.4);transition:var(--transition);}
+.btn-nav:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(46,165,90,.5)}
+.hamburger{display:none;flex-direction:column;gap:5px;cursor:pointer;padding:.4rem}
+.hamburger span{display:block;width:24px;height:2px;background:var(--white);border-radius:2px;transition:var(--transition)}
+.mobile-menu{display:none;position:fixed;top:68px;left:0;right:0;z-index:999;background:var(--green-deep);padding:1.5rem;border-top:1px solid rgba(255,255,255,.1);flex-direction:column;gap:.5rem;}
+.mobile-menu.open{display:flex}
+.mobile-nav-link{padding:.75rem 1rem;border-radius:var(--radius-sm);font-weight:500;color:rgba(255,255,255,.85);transition:var(--transition);cursor:pointer;background:none;border:none;text-align:left;font-family:inherit;font-size:1rem;}
+.mobile-nav-link:hover{background:rgba(255,255,255,.1);color:var(--white)}
+
+/* ══ HERO ══ */
+#hero{min-height:100vh;background:linear-gradient(145deg,var(--green-deep) 0%,#0a2a1a 40%,#153d24 80%,var(--green-dark) 100%);position:relative;overflow:hidden;display:flex;align-items:center;padding:80px 2rem 4rem;}
+.hero-bg-circles{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.hero-circle{position:absolute;border-radius:50%;background:rgba(46,165,90,.06);border:1px solid rgba(46,165,90,.08);animation:floatCircle 8s ease-in-out infinite;}
+.hero-circle:nth-child(1){width:400px;height:400px;top:-100px;right:5%;animation-delay:0s}
+.hero-circle:nth-child(2){width:260px;height:260px;top:30%;right:15%;animation-delay:-2s;background:rgba(212,160,23,.04)}
+.hero-circle:nth-child(3){width:180px;height:180px;bottom:10%;right:25%;animation-delay:-4s}
+.hero-circle:nth-child(4){width:120px;height:120px;top:20%;left:5%;animation-delay:-3s;background:rgba(79,203,120,.06)}
+.hero-circle:nth-child(5){width:80px;height:80px;bottom:30%;left:12%;animation-delay:-1s}
+@keyframes floatCircle{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-20px) scale(1.03)}}
+.hero-inner{max-width:1200px;margin:0 auto;width:100%;display:grid;grid-template-columns:1fr 1fr;gap:4rem;align-items:center}
+.hero-left{position:relative;z-index:2}
+.hero-badge{display:inline-flex;align-items:center;gap:.5rem;padding:.4rem 1rem;border-radius:30px;margin-bottom:1.5rem;background:rgba(212,160,23,.12);border:1px solid rgba(212,160,23,.35);color:var(--gold-light);font-size:.82rem;font-weight:600;letter-spacing:.04em;}
+.hero-badge .dot{width:7px;height:7px;border-radius:50%;background:var(--gold-light);animation:blink 2s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.hero-title{font-family:var(--font-display);font-size:clamp(2.4rem,5vw,3.8rem);line-height:1.1;color:var(--white);margin-bottom:1rem;font-weight:800;}
+.hero-title .accent{color:var(--green-light)}
+.hero-desc{font-size:1.05rem;color:rgba(255,255,255,.7);line-height:1.75;margin-bottom:2rem;max-width:480px;font-weight:300;}
+.hero-buttons{display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:3rem}
+.btn-primary{padding:.85rem 2rem;border-radius:30px;font-size:.95rem;font-weight:600;background:linear-gradient(135deg,var(--green-bright),var(--green-light));color:var(--white);box-shadow:0 6px 24px rgba(46,165,90,.45);transition:var(--transition);border:none;}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 10px 32px rgba(46,165,90,.55)}
+.btn-outline{padding:.85rem 2rem;border-radius:30px;font-size:.95rem;font-weight:600;background:transparent;color:var(--white);border:1.5px solid rgba(255,255,255,.35);transition:var(--transition);}
+.btn-outline:hover{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.6)}
+.hero-stats{display:flex;gap:2.5rem;flex-wrap:wrap}
+.stat-item{text-align:left}
+.stat-num{font-family:var(--font-display);font-size:1.8rem;font-weight:800;color:var(--green-light)}
+.stat-label{font-size:.8rem;color:rgba(255,255,255,.55);font-weight:500;margin-top:.1rem}
+.hero-right{position:relative;z-index:2}
+.hero-cards-container{position:relative;height:480px}
+.floating-card{position:absolute;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:var(--radius-md);backdrop-filter:blur(16px);padding:1rem 1.25rem;box-shadow:0 8px 32px rgba(0,0,0,.25);animation:floatCard 6s ease-in-out infinite;min-width:200px;}
+.floating-card:nth-child(1){top:0;right:0;width:240px;animation-delay:0s}
+.floating-card:nth-child(2){top:120px;left:0;width:210px;animation-delay:-2s}
+.floating-card:nth-child(3){top:250px;right:20px;width:220px;animation-delay:-4s}
+.floating-card:nth-child(4){bottom:20px;left:30px;width:200px;animation-delay:-1s}
+@keyframes floatCard{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
+.fc-label{font-size:.72rem;font-weight:600;letter-spacing:.06em;color:rgba(255,255,255,.5);text-transform:uppercase;margin-bottom:.4rem}
+.fc-value{font-size:1.2rem;font-weight:700;color:var(--white);margin-bottom:.25rem}
+.fc-sub{font-size:.8rem;color:rgba(255,255,255,.6)}
+.fc-icon{font-size:1.4rem;margin-bottom:.5rem}
+.fc-badge{display:inline-block;padding:.2rem .6rem;border-radius:20px;font-size:.72rem;font-weight:600;margin-top:.4rem;}
+.badge-green{background:rgba(79,203,120,.2);color:var(--green-light)}
+.badge-gold{background:rgba(212,160,23,.2);color:var(--gold-light)}
+.badge-red{background:rgba(239,68,68,.2);color:#f87171}
+.badge-blue{background:rgba(59,130,246,.2);color:#93c5fd}
+.scroll-down{position:absolute;bottom:2rem;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:.4rem;color:rgba(255,255,255,.4);font-size:.78rem;letter-spacing:.06em;}
+.scroll-arrow{width:20px;height:20px;border-right:2px solid rgba(255,255,255,.4);border-bottom:2px solid rgba(255,255,255,.4);transform:rotate(45deg);animation:scrollBounce 1.5s ease-in-out infinite;}
+@keyframes scrollBounce{0%,100%{transform:rotate(45deg) translateY(0)}50%{transform:rotate(45deg) translateY(6px)}}
+
+/* ══ SECTION SHARED ══ */
+.section-pad{padding:5rem 2rem}
+.section-inner{max-width:1200px;margin:0 auto}
+.section-tag{display:inline-block;padding:.3rem .9rem;border-radius:20px;background:var(--green-pale);color:var(--green-mid);font-size:.78rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:1rem;}
+.section-title{font-family:var(--font-display);font-size:clamp(1.8rem,4vw,2.8rem);font-weight:800;line-height:1.15;margin-bottom:.75rem;color:var(--text-dark);}
+.section-title .accent{color:var(--green-bright)}
+.section-desc{font-size:1rem;color:var(--text-muted);max-width:560px;line-height:1.75;font-weight:300}
+.section-header{text-align:center;margin-bottom:3.5rem}
+.section-header .section-desc{margin:0 auto}
+
+/* ══ FEATURES ══ */
+#features{background:var(--cream)}
+.features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.5rem;}
+.feature-card{background:var(--white);border-radius:var(--radius-lg);padding:2rem;border:1px solid rgba(0,0,0,.06);transition:var(--transition);position:relative;overflow:hidden;cursor:pointer;}
+.feature-card::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,var(--green-bright),var(--green-light));opacity:0;transition:var(--transition);}
+.feature-card:hover{transform:translateY(-6px);box-shadow:var(--shadow-lg);border-color:transparent}
+.feature-card:hover::before{opacity:1}
+.feature-card:hover .fc-card-icon,.feature-card:hover h3,.feature-card:hover p,.feature-card:hover .try-link{color:var(--white)}
+.fc-card-icon{font-size:2.2rem;margin-bottom:1rem;position:relative;z-index:1;transition:var(--transition)}
+.feature-card h3{font-size:1.1rem;font-weight:700;margin-bottom:.6rem;position:relative;z-index:1;color:var(--text-dark);transition:var(--transition)}
+.feature-card p{font-size:.88rem;color:var(--text-muted);line-height:1.65;position:relative;z-index:1;margin-bottom:1rem;transition:var(--transition)}
+.try-link{font-size:.85rem;font-weight:600;color:var(--green-bright);display:flex;align-items:center;gap:.3rem;position:relative;z-index:1;transition:var(--transition);}
+.try-link::after{content:'→'}
+
+/* ══ DASHBOARD ══ */
+#dashboard{background:linear-gradient(145deg,#0a2218,#0d3320,#112a1e);padding:5rem 2rem;}
+.dashboard-inner{max-width:1100px;margin:0 auto}
+.dash-grid{display:grid;grid-template-columns:1fr 2fr;gap:2rem;margin-top:2.5rem}
+.dash-left{display:flex;flex-direction:column;gap:1.5rem}
+.dash-card{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);border-radius:var(--radius-md);padding:1.5rem;backdrop-filter:blur(10px);}
+.dash-welcome-name{font-size:1.3rem;font-weight:700;color:var(--white);margin-bottom:.2rem}
+.dash-welcome-sub{font-size:.82rem;color:rgba(255,255,255,.5)}
+.dash-badge-active{display:inline-flex;align-items:center;gap:.4rem;padding:.3rem .8rem;border-radius:20px;margin-top:.8rem;background:rgba(79,203,120,.15);color:var(--green-light);font-size:.75rem;font-weight:600;}
+.dash-badge-active .pulse{width:6px;height:6px;border-radius:50%;background:var(--green-light);animation:blink 1.5s infinite}
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.stat-card{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);border-radius:var(--radius-sm);padding:1rem;text-align:center;}
+.stat-card .s-num{font-family:var(--font-display);font-size:1.7rem;font-weight:800;color:var(--green-light)}
+.stat-card .s-label{font-size:.75rem;color:rgba(255,255,255,.5);margin-top:.1rem}
+.stat-card .s-sub{font-size:.75rem;color:rgba(255,255,255,.35)}
+.dash-right{margin:auto;padding:1rem;}
+.activity-title{font-size:.9rem;font-weight:600;color:rgba(255,255,255,.7);margin-bottom:1rem;letter-spacing:.02em}
+.activity-list{display:flex;flex-direction:column;gap:.8rem}
+.activity-item{display:flex;align-items:flex-start;gap:1rem;padding:.9rem 1rem;border-radius:var(--radius-sm);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);}
+.activity-icon{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0;}
+.act-green{background:rgba(79,203,120,.15)}
+.act-gold{background:rgba(212,160,23,.15)}
+.act-blue{background:rgba(59,130,246,.15)}
+.act-red{background:rgba(239,68,68,.15)}
+.activity-text .at-title{font-size:.88rem;font-weight:600;color:rgba(255,255,255,.85)}
+.activity-text .at-sub{font-size:.78rem;color:rgba(255,255,255,.4);margin-top:.15rem}
+
+/* ══ CROP ══ */
+#crop{background:var(--cream)}
+.crop-layout{display:grid;grid-template-columns:1fr 1fr;gap:3rem;align-items:start}
+.form-card{background:var(--white);border-radius:var(--radius-lg);padding:2rem;box-shadow:var(--shadow-sm);border:1px solid rgba(0,0,0,.06);}
+.form-card h3{font-size:1.2rem;font-weight:700;margin-bottom:1.5rem;color:var(--text-dark)}
+.form-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1rem}
+.form-group{margin-bottom:1rem}
+.form-group label{display:block;font-size:.82rem;font-weight:600;color:var(--text-mid);margin-bottom:.4rem}
+.form-input{width:100%;padding:.7rem 1rem;border-radius:var(--radius-sm);border:1.5px solid rgba(0,0,0,.1);background:var(--cream);font-size:.92rem;color:var(--text-dark);transition:var(--transition);}
+.form-input:focus{border-color:var(--green-bright);background:var(--white);box-shadow:0 0 0 3px rgba(46,165,90,.12)}
+.form-input::placeholder{color:#aaa}
+select.form-input{cursor:pointer}
+.btn-predict{width:100%;padding:.9rem;border-radius:var(--radius-sm);background:linear-gradient(135deg,var(--green-dark),var(--green-bright));color:var(--white);font-size:.95rem;font-weight:600;box-shadow:0 4px 16px rgba(46,165,90,.3);transition:var(--transition);margin-top:.5rem;}
+.btn-predict:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 8px 24px rgba(46,165,90,.4)}
+.btn-predict:disabled{opacity:.7;cursor:not-allowed}
+.result-card{background:var(--white);border-radius:var(--radius-lg);padding:2rem;box-shadow:var(--shadow-sm);border:1px solid rgba(0,0,0,.06);display:none;animation:fadeUp .4s ease;}
+.result-card.show{display:block}
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+.result-crop-icon{font-size:3rem;margin-bottom:.5rem}
+.result-crop-name{font-family:var(--font-display);font-size:2rem;font-weight:800;color:var(--green-dark);margin-bottom:.25rem}
+.confidence-bar-wrap{margin:1rem 0}
+.conf-label{display:flex;justify-content:space-between;font-size:.8rem;font-weight:600;color:var(--text-muted);margin-bottom:.4rem}
+.conf-bar{height:8px;background:var(--cream-dark);border-radius:4px;overflow:hidden}
+.conf-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--green-bright),var(--green-light));transition:width 1s ease}
+.result-desc{font-size:.88rem;color:var(--text-muted);line-height:1.7;margin-bottom:1.2rem}
+.btn-save{padding:.65rem 1.5rem;border-radius:var(--radius-sm);border:1.5px solid var(--green-bright);color:var(--green-bright);background:transparent;font-size:.88rem;font-weight:600;transition:var(--transition);}
+.btn-save:hover{background:var(--green-bright);color:var(--white)}
+.placeholder-card{background:var(--white);border-radius:var(--radius-lg);padding:3rem 2rem;box-shadow:var(--shadow-sm);border:1px dashed rgba(0,0,0,.12);text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.75rem;}
+.placeholder-card .ph-icon{font-size:3.5rem}
+.placeholder-card .ph-text{font-size:.95rem;color:var(--text-muted)}
+
+/* ══ DISEASE ══ */
+#disease{background:var(--cream-dark)}
+.disease-layout{display:grid;grid-template-columns:1fr 1fr;gap:3rem;align-items:start}
+.upload-zone{border:2px dashed rgba(46,165,90,.35);border-radius:var(--radius-lg);padding:3rem 2rem;text-align:center;cursor:pointer;transition:var(--transition);background:var(--white);position:relative;}
+.upload-zone:hover,.upload-zone.dragover{border-color:var(--green-bright);background:rgba(46,165,90,.03);}
+.upload-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.upload-icon{font-size:3rem;margin-bottom:1rem}
+.upload-zone h4{font-size:1rem;font-weight:700;color:var(--text-dark);margin-bottom:.4rem}
+.upload-zone p{font-size:.85rem;color:var(--text-muted)}
+.upload-zone .browse{color:var(--green-bright);font-weight:600}
+.preview-img{max-height:220px;border-radius:var(--radius-sm);object-fit:cover;margin:1rem auto 0;display:none}
+.btn-detect{width:100%;padding:.9rem;border-radius:var(--radius-sm);margin-top:1rem;background:linear-gradient(135deg,var(--green-dark),var(--green-bright));color:var(--white);font-size:.95rem;font-weight:600;box-shadow:0 4px 16px rgba(46,165,90,.3);transition:var(--transition);}
+.btn-detect:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 8px 24px rgba(46,165,90,.4)}
+.btn-detect:disabled{opacity:.7;cursor:not-allowed}
+.how-it-works{margin-top:2rem}
+.hiw-title{font-size:.88rem;font-weight:700;color:var(--text-mid);margin-bottom:1rem;letter-spacing:.03em}
+.hiw-steps{display:flex;flex-direction:column;gap:.75rem}
+.hiw-step{display:flex;align-items:flex-start;gap:.75rem}
+.hiw-num{width:26px;height:26px;border-radius:50%;background:var(--green-bright);color:var(--white);font-size:.75rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.hiw-text{font-size:.85rem;color:var(--text-muted)}
+.disease-result{background:var(--white);border-radius:var(--radius-lg);padding:2rem;box-shadow:var(--shadow-sm);border:1px solid rgba(0,0,0,.06);display:none;animation:fadeUp .4s ease;}
+.disease-result.show{display:block}
+.disease-name{font-family:var(--font-display);font-size:1.6rem;font-weight:800;color:var(--text-dark);margin-bottom:.5rem}
+.severity-badge{display:inline-block;padding:.3rem .9rem;border-radius:20px;font-size:.78rem;font-weight:700;margin-bottom:1rem;}
+.sev-high{background:#fee2e2;color:#b91c1c}
+.sev-med{background:#fef3c7;color:#b45309}
+.sev-low{background:var(--green-pale);color:var(--green-mid)}
+.disease-meta{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem}
+.dm-item label{font-size:.75rem;font-weight:600;color:var(--text-muted);display:block}
+.dm-item span{font-size:.92rem;font-weight:600;color:var(--text-dark)}
+.treatment-box{background:var(--green-pale);border-radius:var(--radius-sm);padding:1rem 1.25rem;border-left:4px solid var(--green-bright);margin-top:.75rem;}
+.treatment-box .tb-label{font-size:.78rem;font-weight:700;color:var(--green-dark);margin-bottom:.35rem}
+.treatment-box p{font-size:.85rem;color:var(--text-mid);line-height:1.65}
+
+/* ══ MARKET ══ */
+#market{background:var(--cream)}
+.market-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:1.25rem;margin-bottom:2.5rem}
+.msum-card{background:var(--white);border-radius:var(--radius-md);padding:1.25rem;border:1px solid rgba(0,0,0,.06);box-shadow:var(--shadow-sm);}
+.msum-crop{font-size:.8rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem}
+.msum-price{font-family:var(--font-display);font-size:1.5rem;font-weight:800;color:var(--text-dark)}
+.msum-change{font-size:.82rem;font-weight:600;margin-top:.2rem}
+.msum-change.up{color:#16a34a}
+.msum-change.down{color:#dc2626}
+.market-controls{display:flex;flex-wrap:wrap;gap:1rem;align-items:center;margin-bottom:1.5rem}
+.filter-chips{display:flex;gap:.5rem;flex-wrap:wrap}
+.chip{padding:.4rem .95rem;border-radius:20px;font-size:.82rem;font-weight:600;border:1.5px solid rgba(0,0,0,.1);color:var(--text-muted);cursor:pointer;background:var(--white);transition:var(--transition);}
+.chip.active,.chip:hover{background:var(--green-bright);color:var(--white);border-color:var(--green-bright)}
+.search-wrap{flex:1;min-width:200px;max-width:280px;position:relative}
+.search-wrap input{width:100%;padding:.6rem 1rem .6rem 2.5rem;border-radius:var(--radius-sm);border:1.5px solid rgba(0,0,0,.1);background:var(--white);font-size:.88rem;color:var(--text-dark);transition:var(--transition);}
+.search-wrap input:focus{border-color:var(--green-bright);box-shadow:0 0 0 3px rgba(46,165,90,.1)}
+.search-icon{position:absolute;left:.75rem;top:50%;transform:translateY(-50%);font-size:.9rem;color:var(--text-muted)}
+.market-table-wrap{background:var(--white);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-sm);border:1px solid rgba(0,0,0,.06)}
+.market-table{width:100%;border-collapse:collapse}
+.market-table th{background:var(--green-deep);color:rgba(255,255,255,.8);padding:.85rem 1.25rem;text-align:left;font-size:.8rem;font-weight:600;letter-spacing:.04em;}
+.market-table td{padding:.9rem 1.25rem;font-size:.88rem;border-bottom:1px solid rgba(0,0,0,.05);color:var(--text-dark)}
+.market-table tr:last-child td{border-bottom:none}
+.market-table tr:hover td{background:rgba(46,165,90,.03)}
+.price-up{color:#16a34a;font-weight:600}
+.price-down{color:#dc2626;font-weight:600}
+.crop-flag{display:flex;align-items:center;gap:.5rem}
+.crop-dot{width:8px;height:8px;border-radius:50%;background:var(--green-bright);flex-shrink:0}
+
+/* ══ WEATHER ══ */
+#weather{background:linear-gradient(145deg,var(--green-dark),var(--green-deep));padding:5rem 2rem;}
+#weather .section-title{color:var(--white)}
+#weather .section-desc{color:rgba(255,255,255,.6)}
+#weather .section-tag{background:rgba(79,203,120,.15);color:var(--green-light)}
+.weather-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:1.5rem;margin-bottom:3rem}
+.weather-card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:var(--radius-lg);padding:1.75rem;backdrop-filter:blur(10px);transition:var(--transition);}
+.weather-card:hover{background:rgba(255,255,255,.1);transform:translateY(-4px)}
+.wc-district{font-size:.78rem;font-weight:700;letter-spacing:.06em;color:rgba(255,255,255,.5);text-transform:uppercase;margin-bottom:.5rem}
+.wc-condition{font-size:2rem;margin-bottom:.5rem}
+.wc-temp{font-family:var(--font-display);font-size:2.5rem;font-weight:800;color:var(--white)}
+.wc-feels{font-size:.8rem;color:rgba(255,255,255,.45);margin-top:.1rem}
+.wc-stats{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-top:1rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,.1)}
+.wcs-item label{font-size:.7rem;color:rgba(255,255,255,.4);font-weight:600;text-transform:uppercase;letter-spacing:.04em;display:block}
+.wcs-item span{font-size:.92rem;font-weight:600;color:rgba(255,255,255,.8)}
+.weather-table-wrap{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);border-radius:var(--radius-lg);overflow:hidden}
+.weather-table{width:100%;border-collapse:collapse}
+.weather-table th{background:rgba(0,0,0,.25);color:rgba(255,255,255,.6);padding:.8rem 1.25rem;text-align:left;font-size:.78rem;font-weight:600;letter-spacing:.04em;}
+.weather-table td{padding:.85rem 1.25rem;font-size:.85rem;color:rgba(255,255,255,.75);border-bottom:1px solid rgba(255,255,255,.05)}
+.weather-table tr:last-child td{border-bottom:none}
+.weather-table tr:hover td{background:rgba(255,255,255,.04)}
+.w-condition-cell{display:flex;align-items:center;gap:.5rem}
+
+/* ══ FOOTER ══ */
+footer{background:var(--green-deep);padding:4rem 2rem 2rem;border-top:1px solid rgba(255,255,255,.06);}
+.footer-grid{max-width:1200px;margin:0 auto;display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:3rem;margin-bottom:3rem}
+.footer-brand p{font-size:.88rem;color:rgba(255,255,255,.45);line-height:1.75;margin-top:.75rem;font-weight:300}
+.footer-lang-badges{display:flex;gap:.5rem;margin-top:1rem}
+.lang-badge{padding:.25rem .75rem;border-radius:20px;font-size:.75rem;font-weight:600;border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.5)}
+.footer-col h4{font-size:.88rem;font-weight:700;color:rgba(255,255,255,.7);margin-bottom:1rem;letter-spacing:.04em}
+.footer-links{display:flex;flex-direction:column;gap:.5rem}
+.footer-link{font-size:.85rem;color:rgba(255,255,255,.45);cursor:pointer;transition:var(--transition)}
+.footer-link:hover{color:var(--green-light)}
+.footer-contact-item{display:flex;align-items:flex-start;gap:.5rem;margin-bottom:.6rem}
+.footer-contact-item .icon{font-size:.9rem;margin-top:.1rem;flex-shrink:0}
+.footer-contact-item span{font-size:.84rem;color:rgba(255,255,255,.45);line-height:1.5}
+.footer-bottom{max-width:1200px;margin:0 auto;padding-top:2rem;border-top:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;}
+.footer-bottom p{font-size:.82rem;color:rgba(255,255,255,.35)}
+.footer-bottom-links{display:flex;gap:1.5rem}
+.footer-bottom-links a{font-size:.82rem;color:rgba(255,255,255,.35);transition:var(--transition)}
+.footer-bottom-links a:hover{color:rgba(255,255,255,.7)}
+
+/* ══ TOAST ══ */
+#toast-container{position:fixed;bottom:1.5rem;right:1.5rem;z-index:9999;display:flex;flex-direction:column;gap:.75rem;pointer-events:none;}
+.toast{padding:.9rem 1.4rem;border-radius:var(--radius-sm);font-size:.88rem;font-weight:600;color:var(--white);box-shadow:0 8px 24px rgba(0,0,0,.2);pointer-events:auto;display:flex;align-items:center;gap:.6rem;animation:toastIn .35s ease forwards;max-width:320px;}
+.toast.hiding{animation:toastOut .3s ease forwards}
+.toast-success{background:linear-gradient(135deg,var(--green-dark),var(--green-bright))}
+.toast-error{background:linear-gradient(135deg,#7f1d1d,#ef4444)}
+.toast-info{background:linear-gradient(135deg,#1e3a5f,#3b82f6)}
+@keyframes toastIn{from{opacity:0;transform:translateX(60px)}to{opacity:1;transform:translateX(0)}}
+@keyframes toastOut{from{opacity:1;transform:translateX(0)}to{opacity:0;transform:translateX(60px)}}
+
+/* ══ FADE-UP ══ */
+.fade-up{opacity:0;transform:translateY(28px);transition:opacity .6s ease,transform .6s ease}
+.fade-up.visible{opacity:1;transform:translateY(0)}
+
+/* ══ RESPONSIVE ══ */
+@media(max-width:1024px){
+  .hero-inner{grid-template-columns:1fr;gap:3rem}
+  .hero-right{display:none}
+  .features-grid{grid-template-columns:repeat(2,1fr)}
+  .dash-grid{grid-template-columns:1fr}
+  .crop-layout,.disease-layout{grid-template-columns:1fr}
+  .market-summary{grid-template-columns:repeat(2,1fr)}
+  .weather-cards{grid-template-columns:1fr 1fr}
+  .footer-grid{grid-template-columns:1fr 1fr;gap:2rem}
+}
+@media(max-width:768px){
+  .nav-links,.nav-right .btn-nav{display:none}
+  .hamburger{display:flex}
+  .features-grid{grid-template-columns:1fr}
+  .stats-grid{grid-template-columns:1fr 1fr}
+  .market-summary{grid-template-columns:1fr 1fr}
+  .weather-cards{grid-template-columns:1fr}
+  .footer-grid{grid-template-columns:1fr}
+  .form-grid{grid-template-columns:1fr 1fr}
+  .disease-meta{grid-template-columns:1fr}
+  .footer-bottom{flex-direction:column;text-align:center}
+}
+@media(max-width:480px){
+  .market-summary{grid-template-columns:1fr}
+  .form-grid{grid-template-columns:1fr}
+  .hero-stats{gap:1.5rem}
+  .hero-buttons{flex-direction:column}
+}
+</style>
+</head>
+<body>
+
+<!-- ══ NAVBAR ══ -->
+<nav id="navbar">
+  <div class="nav-logo" onclick="showSection('home')">
+    <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="16" cy="16" r="15" fill="rgba(255,255,255,0.1)" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
+      <path d="M16 6 C16 6, 10 10, 10 17 C10 21, 12.5 24, 16 26 C19.5 24, 22 21, 22 17 C22 10, 16 6, 16 6Z" fill="#4FCB78"/>
+      <path d="M16 14 C16 14, 10 14, 10 20" stroke="#0d3320" stroke-width="1.5" stroke-linecap="round"/>
+      <path d="M16 14 C16 14, 22 14, 22 20" stroke="#0d3320" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="16" y1="14" x2="16" y2="26" stroke="#0d3320" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+    <span class="nav-logo-text">Smart<span>Agri</span> AI</span>
+  </div>
+  <div class="nav-links">
+    <button class="nav-link active" onclick="showSection('home')" data-i18n="nav_home">Home</button>
+    <button class="nav-link" onclick="showSection('crop')" data-i18n="nav_crop">Crop</button>
+    <button class="nav-link" onclick="showSection('disease')" data-i18n="nav_disease">Disease</button>
+    <button class="nav-link" onclick="showSection('market')" data-i18n="nav_market">Market</button>
+    <button class="nav-link" onclick="showSection('weather')" data-i18n="nav_weather">Weather</button>
+  </div>
+  <div class="nav-right">
+    <button class="lang-toggle" onclick="toggleLang()" id="langBtn">
+      <span class="flag">🌐</span>
+      <span id="langLabel">தமிழ்</span>
+    </button>
+    <button class="btn-nav" onclick="showSection('crop')" data-i18n="nav_getstarted">Get Started</button>
+  </div>
+  <div class="hamburger" onclick="toggleMenu()" id="hamburger">
+    <span></span><span></span><span></span>
+  </div>
+</nav>
+
+<!-- MOBILE MENU -->
+<div class="mobile-menu" id="mobileMenu">
+  <button class="mobile-nav-link" onclick="showSection('home');closeMenu()" data-i18n="nav_home">Home</button>
+  <button class="mobile-nav-link" onclick="showSection('crop');closeMenu()" data-i18n="nav_crop">Crop</button>
+  <button class="mobile-nav-link" onclick="showSection('disease');closeMenu()" data-i18n="nav_disease">Disease</button>
+  <button class="mobile-nav-link" onclick="showSection('market');closeMenu()" data-i18n="nav_market">Market</button>
+  <button class="mobile-nav-link" onclick="showSection('weather');closeMenu()" data-i18n="nav_weather">Weather</button>
+  <button class="mobile-nav-link" onclick="toggleLang()" style="color:var(--gold-light)" id="mobileLangBtn">Switch to தமிழ்</button>
+</div>
+
+<!-- ══════════════════════════════════════
+     HOME
+══════════════════════════════════════ -->
+<div id="section-home" class="page-section active">
+
+  <section id="hero">
+    <div class="hero-bg-circles">
+      <div class="hero-circle"></div><div class="hero-circle"></div>
+      <div class="hero-circle"></div><div class="hero-circle"></div><div class="hero-circle"></div>
+    </div>
+    <div class="hero-inner">
+      <div class="hero-left">
+        <div class="hero-badge"><div class="dot"></div><span data-i18n="hero_badge">AI-Powered Agriculture Platform</span></div>
+        <h1 class="hero-title">
+          <span data-i18n="hero_title_1">Smart Farming</span><br>
+          <span class="accent" data-i18n="hero_title_2">Starts Here</span>
+        </h1>
+        <p class="hero-desc" data-i18n="hero_desc">Empowering Tamil Nadu farmers with cutting-edge AI — from crop recommendations to disease detection, live market prices, and hyper-local weather data for all 38 districts.</p>
+        <div class="hero-buttons">
+          <button class="btn-primary" onclick="showSection('crop')" data-i18n="hero_btn1">Get Started</button>
+          <button class="btn-outline" onclick="document.getElementById('features-section').scrollIntoView({behavior:'smooth'})" data-i18n="hero_btn2">Explore Features</button>
+        </div>
+        <div class="hero-stats">
+          <div class="stat-item"><div class="stat-num">12K+</div><div class="stat-label" data-i18n="stat_farmers">Farmers</div></div>
+          <div class="stat-item"><div class="stat-num">95%</div><div class="stat-label" data-i18n="stat_accuracy">Accuracy</div></div>
+          <div class="stat-item"><div class="stat-num">38</div><div class="stat-label" data-i18n="stat_districts">Districts</div></div>
+        </div>
+      </div>
+      <div class="hero-right">
+        <div class="hero-cards-container">
+          <div class="floating-card">
+            <div class="fc-icon">🌾</div>
+            <div class="fc-label" data-i18n="fc_crop_label">Crop Prediction</div>
+            <div class="fc-value" data-i18n="fc_crop_value">Rice — Delta Region</div>
+            <div class="fc-sub" data-i18n="fc_crop_sub">Confidence: 97.2%</div>
+            <div class="fc-badge badge-green" data-i18n="fc_crop_badge">High Yield</div>
+          </div>
+          <div class="floating-card">
+            <div class="fc-icon">🌦️</div>
+            <div class="fc-label" data-i18n="fc_weather_label">Live Weather</div>
+            <div class="fc-value">34°C</div>
+            <div class="fc-sub" data-i18n="fc_weather_sub">Thanjavur • Partly Cloudy</div>
+            <div class="fc-badge badge-blue" data-i18n="fc_weather_badge">Good for Irrigation</div>
+          </div>
+          <div class="floating-card">
+            <div class="fc-icon">📈</div>
+            <div class="fc-label" data-i18n="fc_market_label">Market Price</div>
+            <div class="fc-value">₹2,840/qtl</div>
+            <div class="fc-sub" data-i18n="fc_market_sub">Rice • Thanjavur APMC</div>
+            <div class="fc-badge badge-green">↑ +₹120</div>
+          </div>
+          <div class="floating-card">
+            <div class="fc-icon">⚠️</div>
+            <div class="fc-label" data-i18n="fc_disease_label">Disease Alert</div>
+            <div class="fc-value" data-i18n="fc_disease_value">Blast Detected</div>
+            <div class="fc-sub" data-i18n="fc_disease_sub">Rice • Confidence 91%</div>
+            <div class="fc-badge badge-red" data-i18n="fc_disease_badge">Act Now</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="scroll-down"><div class="scroll-arrow"></div></div>
+  </section>
+
+  <section class="section-pad" id="features-section">
+    <div class="section-inner">
+      <div class="section-header fade-up">
+        <div class="section-tag" data-i18n="feat_tag">Platform Features</div>
+        <h2 class="section-title" data-i18n="feat_title">Everything a <span class="accent">Smart Farmer</span> Needs</h2>
+        <p class="section-desc" data-i18n="feat_desc">Six powerful AI tools designed specifically for Tamil Nadu's diverse agriculture — accessible in your language, on any device.</p>
+      </div>
+      <div class="features-grid">
+        <div class="feature-card fade-up" onclick="showSection('crop')">
+          <div class="fc-card-icon">🌱</div>
+          <h3 data-i18n="feat1_title">Crop Recommendation</h3>
+          <p data-i18n="feat1_desc">Input your soil NPK values, pH, and district to get AI-powered crop suggestions with confidence scores and yield estimates.</p>
+          <div class="try-link" data-i18n="try_now">Try now </div>
+        </div>
+        <div class="feature-card fade-up" onclick="showSection('disease')">
+          <div class="fc-card-icon">🔬</div>
+          <h3 data-i18n="feat2_title">Disease Detection</h3>
+          <p data-i18n="feat2_desc">Upload a photo of your crop leaf. Our AI identifies diseases instantly with treatment recommendations in Tamil and English.</p>
+          <div class="try-link" data-i18n="try_now">Try now </div>
+        </div>
+        <div class="feature-card fade-up" onclick="showSection('market')">
+          <div class="fc-card-icon">📈</div>
+          <h3 data-i18n="feat3_title">Live Market Prices</h3>
+          <p data-i18n="feat3_desc">Real-time APMC market prices across all Tamil Nadu districts. Filter by district, search by crop, track price trends.</p>
+          <div class="try-link" data-i18n="try_now">Try now </div>
+        </div>
+        <div class="feature-card fade-up" onclick="showSection('weather')">
+          <div class="fc-card-icon">🌦️</div>
+          <h3 data-i18n="feat4_title">District Weather</h3>
+          <p data-i18n="feat4_desc">Hyperlocal 7-day forecasts for all 38 districts. Temperature, humidity, rainfall, and farming advisories tailored for you.</p>
+          <div class="try-link" data-i18n="try_now">Try now </div>
+        </div>
+        <div class="feature-card fade-up">
+          <div class="fc-card-icon">👨‍🌾</div>
+          <h3 data-i18n="feat5_title">Farmer Profile</h3>
+          <p data-i18n="feat5_desc">Track your farm history, soil tests, crop cycles, and personalised AI recommendations based on your unique farm data.</p>
+          <div class="try-link" data-i18n="try_now">Try now </div>
+        </div>
+        <div class="feature-card fade-up">
+          <div class="fc-card-icon">📋</div>
+          <h3 data-i18n="feat6_title">Soil Test History</h3>
+          <p data-i18n="feat6_desc">Maintain a digital log of all soil tests. Compare readings over seasons and receive fertiliser correction recommendations.</p>
+          <div class="try-link" data-i18n="try_now">Try now </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="dashboard">
+    <div class="dashboard-inner">
+      <div class="section-header fade-up" style="text-align:left">
+        <div class="section-tag" style="background:rgba(79,203,120,.15);color:var(--green-light)" data-i18n="dash_tag">Farmer Dashboard</div>
+        <h2 class="section-title" style="color:var(--white)" data-i18n="dash_title">Your Farm, <span class="accent">At a Glance</span></h2>
+        <p class="section-desc" style="color:rgba(255,255,255,.55)" data-i18n="dash_desc">Everything you need — soil history, disease scans, and crop performance — in one beautiful dashboard.</p>
+      </div>
+      <div class="dash-grid fade-up">
+        <div class="dash-left">
+          <div class="dash-card">
+            <div class="dash-welcome-name" data-i18n="dash_welcome">Welcome back, Rajan S.</div>
+            <div class="dash-welcome-sub" data-i18n="dash_location">📍 Thanjavur • Alluvial Soil</div>
+            <div class="dash-badge-active"><div class="pulse"></div><span data-i18n="dash_session">Active Session</span></div>
+          </div>
+          <div class="stats-grid">
+            <div class="stat-card"><div class="s-num">14</div><div class="s-label" data-i18n="dash_soil_tests">Soil Tests</div><div class="s-sub" data-i18n="dash_this_season">This Season</div></div>
+            <div class="stat-card"><div class="s-num">7</div><div class="s-label" data-i18n="dash_disease_scans">Disease Scans</div><div class="s-sub" data-i18n="dash_this_month">This Month</div></div>
+            <div class="stat-card"><div class="s-num" style="color:var(--gold-light)">97.2%</div><div class="s-label" data-i18n="dash_last_crop">Last Crop</div><div class="s-sub" data-i18n="dash_rice_yield">Rice Yield Score</div></div>
+            <div class="stat-card"><div class="s-num" style="color:#93c5fd">34°C</div><div class="s-label" data-i18n="dash_weather">Weather</div><div class="s-sub" data-i18n="dash_partly_cloudy">Partly Cloudy</div></div>
+          </div>
+        </div>
+        <div class="dash-right dash-card">
+          <div class="activity-title" data-i18n="dash_activity">Recent Activity</div>
+          <div class="activity-list">
+            <div class="activity-item"><div class="activity-icon act-green">🌾</div><div class="activity-text"><div class="at-title" data-i18n="act1_title">Crop Recommendation — Rice</div><div class="at-sub" data-i18n="act1_sub">Confidence 97.2% • 2 hours ago</div></div></div>
+            <div class="activity-item"><div class="activity-icon act-red">🔬</div><div class="activity-text"><div class="at-title" data-i18n="act2_title">Disease Detected — Leaf Blast</div><div class="at-sub" data-i18n="act2_sub">Severity: Medium • Yesterday</div></div></div>
+            <div class="activity-item"><div class="activity-icon act-gold">📈</div><div class="activity-text"><div class="at-title" data-i18n="act3_title">Market Price Alert — Rice ↑</div><div class="at-sub" data-i18n="act3_sub">₹2,840/qtl at Thanjavur APMC • 3 days ago</div></div></div>
+            <div class="activity-item"><div class="activity-icon act-blue">📋</div><div class="activity-text"><div class="at-title" data-i18n="act4_title">Soil Test Updated — Plot B</div><div class="at-sub" data-i18n="act4_sub">N:92 P:45 K:67 • Last week</div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ══════════════════════════════════════
+     CROP SECTION
+══════════════════════════════════════ -->
+<div id="section-crop" class="page-section">
+  <div style="height:68px"></div>
+  <section class="section-pad" id="crop">
+    <div class="section-inner">
+      <div class="section-header fade-up">
+        <div class="section-tag" data-i18n="crop_tag">AI Powered</div>
+        <h2 class="section-title" data-i18n="crop_title">Crop <span class="accent">Recommendation</span></h2>
+        <p class="section-desc" data-i18n="crop_desc">Enter your soil data and let our AI identify the best crop for your land with confidence scores and agronomic advice.</p>
+      </div>
+      <div class="crop-layout fade-up">
+        <div>
+          <div class="form-card">
+            <h3 data-i18n="crop_form_title">Soil Analysis Input</h3>
+            <div class="form-grid">
+              <div class="form-group">
+                <label data-i18n="lbl_nitrogen">Nitrogen (N) kg/ha</label>
+                <input class="form-input" type="number" id="inp_n" placeholder="e.g. 90" min="0" max="200">
+              </div>
+              <div class="form-group">
+                <label data-i18n="lbl_phosphorus">Phosphorus (P) kg/ha</label>
+                <input class="form-input" type="number" id="inp_p" placeholder="e.g. 42" min="0" max="200">
+              </div>
+              <div class="form-group">
+                <label data-i18n="lbl_potassium">Potassium (K) kg/ha</label>
+                <input class="form-input" type="number" id="inp_k" placeholder="e.g. 43" min="0" max="200">
+              </div>
+            </div>
+            <div class="form-group">
+              <label data-i18n="lbl_ph">Soil pH Level</label>
+              <input class="form-input" type="number" id="inp_ph" placeholder="e.g. 6.5" step="0.1" min="4" max="9">
+            </div>
+            <div class="form-group">
+              <label data-i18n="lbl_district">District</label>
+              <select class="form-input" id="inp_district">
+                <option value="" data-i18n="select_district">Select District</option>
+                <option>Thanjavur</option><option>Coimbatore</option><option>Madurai</option>
+                <option>Salem</option><option>Trichy</option><option>Vellore</option>
+                <option>Tirunelveli</option><option>Erode</option><option>Dindigul</option>
+                <option>Nagapattinam</option><option>Tiruvarur</option><option>Pudukkottai</option>
+              </select>
+            </div>
+            <button class="btn-predict" onclick="predictCrop()" data-i18n="btn_predict">🌱 Predict Best Crop</button>
+          </div>
+        </div>
+        <div id="crop-result-area">
+          <div class="placeholder-card" id="crop-placeholder">
+            <div class="ph-icon">🌾</div>
+            <div class="ph-text" data-i18n="crop_placeholder">Enter your soil data to see AI crop recommendations</div>
+          </div>
+          <div class="result-card" id="crop-result">
+            <div class="result-crop-icon" id="res_icon">🌾</div>
+            <div class="result-crop-name" id="res_name">Rice</div>
+            <div class="confidence-bar-wrap">
+              <div class="conf-label">
+                <span data-i18n="confidence">Confidence</span>
+                <span id="res_conf_pct">94%</span>
+              </div>
+              <div class="conf-bar"><div class="conf-fill" id="conf_bar" style="width:0%"></div></div>
+            </div>
+            <p class="result-desc" id="res_desc"></p>
+            <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+              <button class="btn-save" onclick="saveToHistory()" data-i18n="btn_save">💾 Save to History</button>
+              <button class="btn-save" onclick="predictCrop()" style="border-color:var(--text-muted);color:var(--text-muted)" data-i18n="btn_recalc">Recalculate</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ══════════════════════════════════════
+     DISEASE SECTION
+══════════════════════════════════════ -->
+<div id="section-disease" class="page-section">
+  <div style="height:68px"></div>
+  <section class="section-pad" id="disease" style="background:var(--cream-dark)">
+    <div class="section-inner">
+      <div class="section-header fade-up">
+        <div class="section-tag" data-i18n="disease_tag">Computer Vision AI</div>
+        <h2 class="section-title" data-i18n="disease_title">Plant Disease <span class="accent">Detection</span></h2>
+        <p class="section-desc" data-i18n="disease_desc">Upload a photo of your plant leaf. Our AI instantly identifies diseases and gives treatment recommendations.</p>
+      </div>
+      <div class="disease-layout fade-up">
+        <div>
+          <div class="upload-zone" id="uploadZone" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+            <input type="file" id="fileInput" accept="image/*" onchange="handleFileSelect(event)">
+            <div class="upload-icon">📷</div>
+            <h4 data-i18n="upload_title">Drag & Drop or Browse</h4>
+            <p data-i18n="upload_desc">Upload a clear photo of the affected <span class="browse" data-i18n="upload_browse">leaf or plant</span></p>
+            <p style="font-size:.75rem;color:#bbb;margin-top:.5rem" data-i18n="upload_formats">Supports JPG, PNG, WEBP (max 10MB)</p>
+            <img class="preview-img" id="previewImg" alt="Preview">
+          </div>
+          <button class="btn-detect" onclick="detectDisease()" data-i18n="btn_detect">🔬 Detect Disease</button>
+          <div class="how-it-works">
+            <div class="hiw-title" data-i18n="hiw_title">HOW IT WORKS</div>
+            <div class="hiw-steps">
+              <div class="hiw-step"><div class="hiw-num">1</div><div class="hiw-text" data-i18n="hiw1">Upload a clear photo of the affected leaf or plant</div></div>
+              <div class="hiw-step"><div class="hiw-num">2</div><div class="hiw-text" data-i18n="hiw2">Our AI analyses the image using a deep-learning model</div></div>
+              <div class="hiw-step"><div class="hiw-num">3</div><div class="hiw-text" data-i18n="hiw3">Get disease name, severity, and treatment in seconds</div></div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="placeholder-card" id="disease-placeholder" style="height:300px;background:var(--white)">
+            <div class="ph-icon">🔬</div>
+            <div class="ph-text" data-i18n="disease_placeholder">Upload an image and click Detect Disease</div>
+          </div>
+          <div class="disease-result" id="disease-result">
+            <h3 class="disease-name" id="dis_name">Leaf Blast</h3>
+            <div class="severity-badge" id="dis_severity">⚠ Medium Severity</div>
+            <div class="disease-meta">
+              <div class="dm-item"><label data-i18n="dis_confidence">Confidence</label><span id="dis_conf">91.4%</span></div>
+              <div class="dm-item"><label data-i18n="dis_crop">Crop Type</label><span id="dis_crop">Rice (Oryza sativa)</span></div>
+            </div>
+            <div class="treatment-box">
+              <div class="tb-label" data-i18n="dis_treatment">Recommended Treatment</div>
+              <p id="dis_treatment_text">Apply Tricyclazole 75% WP at 0.6g/L water. Remove and destroy infected leaves. Maintain field sanitation and avoid overhead irrigation.</p>
+            </div>
+            <div style="margin-top:1rem">
+              <button class="btn-save" onclick="showToast('Treatment plan saved!','success')" data-i18n="btn_save_treatment">💾 Save Treatment Plan</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ══════════════════════════════════════
+     MARKET SECTION
+══════════════════════════════════════ -->
+<div id="section-market" class="page-section">
+  <div style="height:68px"></div>
+  <section class="section-pad" id="market">
+    <div class="section-inner">
+      <div class="section-header fade-up">
+        <div class="section-tag" data-i18n="market_tag">Live APMC Data</div>
+        <h2 class="section-title" data-i18n="market_title">Market <span class="accent">Prices</span></h2>
+        <p class="section-desc" data-i18n="market_desc">Real-time commodity prices from Tamil Nadu APMC markets. Updated daily for 38 districts.</p>
+      </div>
+      <div class="market-summary fade-up">
+        <div class="msum-card"><div class="msum-crop" data-i18n="msum1_crop">Rice (Paddy)</div><div class="msum-price">₹2,840</div><div class="msum-change up">↑ +₹120 (4.4%)</div></div>
+        <div class="msum-card"><div class="msum-crop" data-i18n="msum2_crop">Sugarcane</div><div class="msum-price">₹3,150</div><div class="msum-change up">↑ +₹60 (1.9%)</div></div>
+        <div class="msum-card"><div class="msum-crop" data-i18n="msum3_crop">Cotton (Kapas)</div><div class="msum-price">₹6,420</div><div class="msum-change down">↓ −₹80 (1.2%)</div></div>
+        <div class="msum-card"><div class="msum-crop" data-i18n="msum4_crop">Groundnut</div><div class="msum-price">₹5,800</div><div class="msum-change up">↑ +₹200 (3.6%)</div></div>
+      </div>
+      <div class="market-controls fade-up">
+        <div class="filter-chips" id="filterChips">
+          <div class="chip active" onclick="filterMarket('All',this)" data-i18n="filter_all">All</div>
+          <div class="chip" onclick="filterMarket('Thanjavur',this)">Thanjavur</div>
+          <div class="chip" onclick="filterMarket('Coimbatore',this)">Coimbatore</div>
+          <div class="chip" onclick="filterMarket('Madurai',this)">Madurai</div>
+          <div class="chip" onclick="filterMarket('Salem',this)">Salem</div>
+          <div class="chip" onclick="filterMarket('Erode',this)">Erode</div>
+        </div>
+        <div class="search-wrap">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="marketSearch" placeholder="Search crop..." oninput="searchMarket(this.value)" data-i18n-placeholder="search_placeholder">
+        </div>
+      </div>
+      <div class="market-table-wrap fade-up">
+        <table class="market-table">
+          <thead>
+            <tr>
+              <th data-i18n="th_crop">Crop Name</th>
+              <th data-i18n="th_price">Price (₹/Qtl)</th>
+              <th data-i18n="th_district">District</th>
+              <th data-i18n="th_change">Change</th>
+              <th data-i18n="th_date">Date</th>
+            </tr>
+          </thead>
+          <tbody id="marketTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ══════════════════════════════════════
+     WEATHER SECTION
+══════════════════════════════════════ -->
+<div id="section-weather" class="page-section">
+  <div style="height:68px"></div>
+  <section id="weather">
+    <div class="section-inner">
+      <div class="section-header fade-up">
+        <div class="section-tag" data-i18n="weather_tag">Live Forecast</div>
+        <h2 class="section-title" data-i18n="weather_title">District <span class="accent">Weather</span></h2>
+        <p class="section-desc" data-i18n="weather_desc">Hyperlocal 7-day forecasts for all Tamil Nadu districts. Plan your farming with precision.</p>
+      </div>
+      <div class="weather-cards fade-up" id="weatherCards"></div>
+      <div class="weather-table-wrap fade-up">
+        <table class="weather-table">
+          <thead>
+            <tr>
+              <th data-i18n="wth_district">District</th>
+              <th data-i18n="wth_condition">Condition</th>
+              <th data-i18n="wth_temp">Temp (°C)</th>
+              <th data-i18n="wth_humidity">Humidity (%)</th>
+              <th data-i18n="wth_rainfall">Rainfall (mm)</th>
+              <th data-i18n="wth_wind">Wind (km/h)</th>
+              <th data-i18n="wth_advisory">Advisory</th>
+            </tr>
+          </thead>
+          <tbody id="weatherTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ══ FOOTER ══ -->
+<footer>
+  <div class="footer-grid">
+    <div class="footer-brand">
+      <div class="nav-logo">
+        <svg viewBox="0 0 32 32" fill="none" width="32" height="32">
+          <circle cx="16" cy="16" r="15" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.2)" stroke-width="1"/>
+          <path d="M16 6 C16 6, 10 10, 10 17 C10 21, 12.5 24, 16 26 C19.5 24, 22 21, 22 17 C22 10, 16 6, 16 6Z" fill="#4FCB78"/>
+          <line x1="16" y1="14" x2="16" y2="26" stroke="#0d3320" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        <span class="nav-logo-text">Smart<span>Agri</span> AI</span>
+      </div>
+      <p data-i18n="footer_desc">Empowering Tamil Nadu farmers with artificial intelligence. Smarter decisions, better harvests, brighter futures — in your language.</p>
+      <div class="footer-lang-badges"><span class="lang-badge">English</span><span class="lang-badge">தமிழ்</span></div>
+    </div>
+    <div class="footer-col">
+      <h4 data-i18n="footer_links_title">Quick Links</h4>
+      <div class="footer-links">
+        <span class="footer-link" onclick="showSection('home')" data-i18n="nav_home">Home</span>
+        <span class="footer-link" onclick="showSection('crop')" data-i18n="nav_crop">Crop Recommendation</span>
+        <span class="footer-link" onclick="showSection('disease')" data-i18n="nav_disease">Disease Detection</span>
+        <span class="footer-link" onclick="showSection('market')" data-i18n="nav_market">Market Prices</span>
+        <span class="footer-link" onclick="showSection('weather')" data-i18n="nav_weather">Weather</span>
+      </div>
+    </div>
+    <div class="footer-col">
+      <h4 data-i18n="footer_districts_title">Coverage</h4>
+      <div class="footer-links">
+        <span class="footer-link">Thanjavur</span><span class="footer-link">Coimbatore</span>
+        <span class="footer-link">Madurai</span><span class="footer-link">Salem</span>
+        <span class="footer-link">38 Districts →</span>
+      </div>
+    </div>
+    <div class="footer-col">
+      <h4 data-i18n="footer_contact_title">Contact</h4>
+      <div class="footer-contact-item"><span class="icon">📧</span><span>support@smartagri.ai</span></div>
+      <div class="footer-contact-item"><span class="icon">📞</span><span>1800-425-1551 (Toll Free)</span></div>
+      <div class="footer-contact-item"><span class="icon">📍</span><span data-i18n="footer_address">TIDCO Complex, Anna Salai, Chennai – 600 002</span></div>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <p data-i18n="footer_copy">© 2025 Smart Agri AI. All rights reserved. Made with ❤️ for Tamil Nadu Farmers.</p>
+    <div class="footer-bottom-links">
+      <a href="#" data-i18n="footer_privacy">Privacy Policy</a>
+      <a href="#" data-i18n="footer_terms">Terms of Use</a>
+      <a href="#" data-i18n="footer_support">Support</a>
+    </div>
+  </div>
+</footer>
+
+<div id="toast-container"></div>
+
+<script>
+/* ══════════════════════════════════════
+   TRANSLATIONS
+══════════════════════════════════════ */
+const translations={
+  en:{
+    nav_home:'Home',nav_crop:'Crop',nav_disease:'Disease',nav_market:'Market',nav_weather:'Weather',nav_getstarted:'Get Started',
+    hero_badge:'AI-Powered Agriculture Platform',hero_title_1:'Smart Farming',hero_title_2:'Starts Here',
+    hero_desc:'Empowering Tamil Nadu farmers with cutting-edge AI — from crop recommendations to disease detection, live market prices, and hyper-local weather data for all 38 districts.',
+    hero_btn1:'Get Started',hero_btn2:'Explore Features',stat_farmers:'Farmers',stat_accuracy:'Accuracy',stat_districts:'Districts',
+    fc_crop_label:'Crop Prediction',fc_crop_value:'Rice — Delta Region',fc_crop_sub:'Confidence: 97.2%',fc_crop_badge:'High Yield',
+    fc_weather_label:'Live Weather',fc_weather_sub:'Thanjavur • Partly Cloudy',fc_weather_badge:'Good for Irrigation',
+    fc_market_label:'Market Price',fc_market_sub:'Rice • Thanjavur APMC',fc_disease_label:'Disease Alert',fc_disease_value:'Blast Detected',fc_disease_sub:'Rice • Confidence 91%',fc_disease_badge:'Act Now',
+    feat_tag:'Platform Features',feat_title:'Everything a Smart Farmer Needs',feat_desc:"Six powerful AI tools designed specifically for Tamil Nadu's diverse agriculture — accessible in your language, on any device.",
+    feat1_title:'Crop Recommendation',feat1_desc:'Input your soil NPK values, pH, and district to get AI-powered crop suggestions with confidence scores and yield estimates.',
+    feat2_title:'Disease Detection',feat2_desc:'Upload a photo of your crop leaf. Our AI identifies diseases instantly with treatment recommendations in Tamil and English.',
+    feat3_title:'Live Market Prices',feat3_desc:'Real-time APMC market prices across all Tamil Nadu districts. Filter by district, search by crop, track price trends.',
+    feat4_title:'District Weather',feat4_desc:'Hyperlocal 7-day forecasts for all 38 districts. Temperature, humidity, rainfall, and farming advisories tailored for you.',
+    feat5_title:'Farmer Profile',feat5_desc:'Track your farm history, soil tests, crop cycles, and personalised AI recommendations based on your unique farm data.',
+    feat6_title:'Soil Test History',feat6_desc:'Maintain a digital log of all soil tests. Compare readings over seasons and receive fertiliser correction recommendations.',
+    try_now:'Try now',
+    dash_tag:'Farmer Dashboard',dash_title:'Your Farm, At a Glance',dash_desc:'Everything you need — soil history, disease scans, and crop performance — in one beautiful dashboard.',
+    dash_welcome:'Welcome back, Rajan S.',dash_location:'📍 Thanjavur • Alluvial Soil',dash_session:'Active Session',
+    dash_soil_tests:'Soil Tests',dash_this_season:'This Season',dash_disease_scans:'Disease Scans',dash_this_month:'This Month',
+    dash_last_crop:'Last Crop',dash_rice_yield:'Rice Yield Score',dash_weather:'Weather',dash_partly_cloudy:'Partly Cloudy',
+    dash_activity:'Recent Activity',
+    act1_title:'Crop Recommendation — Rice',act1_sub:'Confidence 97.2% • 2 hours ago',
+    act2_title:'Disease Detected — Leaf Blast',act2_sub:'Severity: Medium • Yesterday',
+    act3_title:'Market Price Alert — Rice ↑',act3_sub:'₹2,840/qtl at Thanjavur APMC • 3 days ago',
+    act4_title:'Soil Test Updated — Plot B',act4_sub:'N:92 P:45 K:67 • Last week',
+    crop_tag:'AI Powered',crop_title:'Crop Recommendation',crop_desc:'Enter your soil data and let our AI identify the best crop for your land with confidence scores and agronomic advice.',
+    crop_form_title:'Soil Analysis Input',lbl_nitrogen:'Nitrogen (N) kg/ha',lbl_phosphorus:'Phosphorus (P) kg/ha',lbl_potassium:'Potassium (K) kg/ha',lbl_ph:'Soil pH Level',lbl_district:'District',
+    select_district:'Select District',btn_predict:'🌱 Predict Best Crop',crop_placeholder:'Enter your soil data to see AI crop recommendations',
+    confidence:'Confidence',btn_save:'💾 Save to History',btn_recalc:'Recalculate',
+    disease_tag:'Computer Vision AI',disease_title:'Plant Disease Detection',disease_desc:'Upload a photo of your plant leaf. Our AI instantly identifies diseases and gives treatment recommendations.',
+    upload_title:'Drag & Drop or Browse',upload_desc:'Upload a clear photo of the affected',upload_browse:'leaf or plant',upload_formats:'Supports JPG, PNG, WEBP (max 10MB)',
+    btn_detect:'🔬 Detect Disease',hiw_title:'HOW IT WORKS',hiw1:'Upload a clear photo of the affected leaf or plant',hiw2:'Our AI analyses the image using a deep-learning model',hiw3:'Get disease name, severity, and treatment in seconds',
+    disease_placeholder:'Upload an image and click Detect Disease',dis_confidence:'Confidence',dis_crop:'Crop Type',dis_treatment:'Recommended Treatment',btn_save_treatment:'💾 Save Treatment Plan',
+    market_tag:'Live APMC Data',market_title:'Market Prices',market_desc:'Real-time commodity prices from Tamil Nadu APMC markets. Updated daily for 38 districts.',
+    msum1_crop:'Rice (Paddy)',msum2_crop:'Sugarcane',msum3_crop:'Cotton (Kapas)',msum4_crop:'Groundnut',
+    filter_all:'All',search_placeholder:'Search crop...',th_crop:'Crop Name',th_price:'Price (₹/Qtl)',th_district:'District',th_change:'Change',th_date:'Date',
+    weather_tag:'Live Forecast',weather_title:'District Weather',weather_desc:'Hyperlocal 7-day forecasts for all Tamil Nadu districts. Plan your farming with precision.',
+    wth_district:'District',wth_condition:'Condition',wth_temp:'Temp (°C)',wth_humidity:'Humidity (%)',wth_rainfall:'Rainfall (mm)',wth_wind:'Wind (km/h)',wth_advisory:'Advisory',
+    footer_desc:'Empowering Tamil Nadu farmers with artificial intelligence. Smarter decisions, better harvests, brighter futures — in your language.',
+    footer_links_title:'Quick Links',footer_districts_title:'Coverage',footer_contact_title:'Contact',footer_address:'TIDCO Complex, Anna Salai, Chennai – 600 002',
+    footer_copy:'© 2025 Smart Agri AI. All rights reserved. Made with ❤️ for Tamil Nadu Farmers.',
+    footer_privacy:'Privacy Policy',footer_terms:'Terms of Use',footer_support:'Support',
+    toast_saved:'Saved to history!',toast_error:'Please fill all fields',toast_no_image:'Please upload an image first',toast_detected:'Disease detected successfully'
+  },
+  ta:{
+    nav_home:'முகப்பு',nav_crop:'பயிர்',nav_disease:'நோய்',nav_market:'சந்தை',nav_weather:'வானிலை',nav_getstarted:'தொடங்கு',
+    hero_badge:'AI-சக்தி வேளாண் தளம்',hero_title_1:'சிறந்த விவசாயம்',hero_title_2:'இங்கே தொடங்குகிறது',
+    hero_desc:'தமிழ்நாடு விவசாயிகளுக்கு AI தொழில்நுட்பம் — பயிர் பரிந்துரை, நோய் கண்டறிதல், நேரடி சந்தை விலை மற்றும் 38 மாவட்ட வானிலை.',
+    hero_btn1:'தொடங்கு',hero_btn2:'அம்சங்கள் காண்க',stat_farmers:'விவசாயிகள்',stat_accuracy:'துல்லியம்',stat_districts:'மாவட்டங்கள்',
+    fc_crop_label:'பயிர் கணிப்பு',fc_crop_value:'நெல் — டெல்டா பகுதி',fc_crop_sub:'நம்பகத்தன்மை: 97.2%',fc_crop_badge:'அதிக விளைச்சல்',
+    fc_weather_label:'நேரடி வானிலை',fc_weather_sub:'தஞ்சாவூர் • பாதி மேகம்',fc_weather_badge:'நீர்ப்பாசனத்திற்கு ஏற்றது',
+    fc_market_label:'சந்தை விலை',fc_market_sub:'நெல் • தஞ்சாவூர் APMC',fc_disease_label:'நோய் எச்சரிக்கை',fc_disease_value:'பிளாஸ்ட் கண்டறியப்பட்டது',fc_disease_sub:'நெல் • நம்பகத்தன்மை 91%',fc_disease_badge:'இப்போதே நடவடிக்கை எடு',
+    feat_tag:'தள அம்சங்கள்',feat_title:'ஒரு சிறந்த விவசாயிக்கு தேவையான அனைத்தும்',feat_desc:'தமிழ்நாட்டின் வேளாண்மைக்காக வடிவமைக்கப்பட்ட ஆறு AI கருவிகள் — உங்கள் மொழியில், எந்த சாதனத்திலும்.',
+    feat1_title:'பயிர் பரிந்துரை',feat1_desc:'மண் NPK மதிப்புகள், pH மற்றும் மாவட்டத்தை உள்ளிட்டு AI பரிந்துரைகளை பெறுங்கள்.',
+    feat2_title:'நோய் கண்டறிதல்',feat2_desc:'பயிர் இலையின் படம் பதிவேற்றுங்கள். AI உடனடியாக நோயை கண்டறிந்து சிகிச்சை பரிந்துரைக்கும்.',
+    feat3_title:'நேரடி சந்தை விலை',feat3_desc:'அனைத்து தமிழ்நாடு மாவட்டங்களிலும் APMC சந்தை விலைகள். மாவட்டம், பயிர் வாரியாக வடிகட்டுங்கள்.',
+    feat4_title:'மாவட்ட வானிலை',feat4_desc:'38 மாவட்டங்களுக்கும் 7 நாள் முன்னறிவிப்பு. வெப்பம், ஈரப்பதம், மழை மற்றும் வேளாண் ஆலோசனை.',
+    feat5_title:'விவசாயி சுயவிவரம்',feat5_desc:'பண்ணை வரலாறு, மண் சோதனை, பயிர் சுழற்சி மற்றும் தனிப்பயனாக்கப்பட்ட AI பரிந்துரைகளை கண்காணியுங்கள்.',
+    feat6_title:'மண் சோதனை வரலாறு',feat6_desc:'அனைத்து மண் சோதனைகளின் டிஜிட்டல் பதிவை பராமரியுங்கள். பருவங்களில் ஒப்பீடு செய்யுங்கள்.',
+    try_now:'இப்போது முயற்சி',
+    dash_tag:'விவசாயி டாஷ்போர்டு',dash_title:'உங்கள் பண்ணை, ஒரு பார்வையில்',dash_desc:'மண் வரலாறு, நோய் ஸ்கேன் மற்றும் பயிர் செயல்திறன் — ஒரே இடத்தில்.',
+    dash_welcome:'மீண்டும் வரவேற்கிறோம், ராஜன் ஸ்.',dash_location:'📍 தஞ்சாவூர் • வண்டல் மண்',dash_session:'செயலில் உள்ள அமர்வு',
+    dash_soil_tests:'மண் சோதனைகள்',dash_this_season:'இந்த பருவம்',dash_disease_scans:'நோய் ஸ்கேன்கள்',dash_this_month:'இந்த மாதம்',
+    dash_last_crop:'கடைசி பயிர்',dash_rice_yield:'நெல் விளைச்சல் மதிப்பெண்',dash_weather:'வானிலை',dash_partly_cloudy:'பாதி மேகமூட்டம்',
+    dash_activity:'சமீபத்திய செயல்பாடு',
+    act1_title:'பயிர் பரிந்துரை — நெல்',act1_sub:'நம்பகத்தன்மை 97.2% • 2 மணி நேரம் முன்பு',
+    act2_title:'நோய் கண்டறியப்பட்டது — இலை பிளாஸ்ட்',act2_sub:'தீவிரம்: நடுத்தரம் • நேற்று',
+    act3_title:'சந்தை விலை எச்சரிக்கை — நெல் ↑',act3_sub:'₹2,840/குவிண்டால் தஞ்சாவூர் APMC • 3 நாட்கள் முன்பு',
+    act4_title:'மண் சோதனை புதுப்பிக்கப்பட்டது — நிலம் B',act4_sub:'N:92 P:45 K:67 • கடந்த வாரம்',
+    crop_tag:'AI சக்தி',crop_title:'பயிர் பரிந்துரை',crop_desc:'உங்கள் மண் தரவை உள்ளிட்டு AI மூலம் சிறந்த பயிரை கண்டறியுங்கள்.',
+    crop_form_title:'மண் பகுப்பாய்வு உள்ளீடு',lbl_nitrogen:'நைட்ரஜன் (N) கி/ஹெக்',lbl_phosphorus:'பாஸ்பரஸ் (P) கி/ஹெக்',lbl_potassium:'பொட்டாசியம் (K) கி/ஹெக்',lbl_ph:'மண் pH அளவு',lbl_district:'மாவட்டம்',
+    select_district:'மாவட்டம் தேர்ந்தெடுக்கவும்',btn_predict:'🌱 சிறந்த பயிரை கணிக்கவும்',crop_placeholder:'AI பரிந்துரைகளை காண மண் தரவை உள்ளிடுங்கள்',
+    confidence:'நம்பகத்தன்மை',btn_save:'💾 வரலாற்றில் சேமி',btn_recalc:'மீண்டும் கணக்கிடு',
+    disease_tag:'கம்ப்யூட்டர் விஷன் AI',disease_title:'தாவர நோய் கண்டறிதல்',disease_desc:'தாவர இலையின் படம் பதிவேற்றுங்கள். AI உடனடியாக நோயை கண்டறிந்து சிகிச்சை பரிந்துரைக்கும்.',
+    upload_title:'இழுத்து விடவும் அல்லது தேர்வு செய்யவும்',upload_desc:'பாதிக்கப்பட்ட',upload_browse:'இலை அல்லது தாவரத்தின் படம்',upload_formats:'JPG, PNG, WEBP ஆதரிக்கப்படுகிறது (அதிகபட்சம் 10MB)',
+    btn_detect:'🔬 நோயை கண்டறி',hiw_title:'எவ்வாறு செயல்படுகிறது',hiw1:'பாதிக்கப்பட்ட இலை அல்லது தாவரத்தின் தெளிவான படம் பதிவேற்றவும்',hiw2:'AI ஆழ்-கற்றல் மாதிரி மூலம் படத்தை பகுப்பாய்வு செய்கிறது',hiw3:'விரைவில் நோய் பெயர், தீவிரம் மற்றும் சிகிச்சை பெறுங்கள்',
+    disease_placeholder:'படத்தை பதிவேற்றி நோயை கண்டறி என்பதை கிளிக் செய்யவும்',dis_confidence:'நம்பகத்தன்மை',dis_crop:'பயிர் வகை',dis_treatment:'பரிந்துரைக்கப்பட்ட சிகிச்சை',btn_save_treatment:'💾 சிகிச்சை திட்டத்தை சேமி',
+    market_tag:'நேரடி APMC தரவு',market_title:'சந்தை விலைகள்',market_desc:'தமிழ்நாடு APMC சந்தைகளில் இருந்து நேரடி விலைகள். 38 மாவட்டங்களுக்கும் தினமும் புதுப்பிக்கப்படுகிறது.',
+    msum1_crop:'நெல் (நெற்பயிர்)',msum2_crop:'கரும்பு',msum3_crop:'பருத்தி (காபாஸ்)',msum4_crop:'நிலக்கடலை',
+    filter_all:'அனைத்தும்',search_placeholder:'பயிர் தேடுங்கள்...',th_crop:'பயிர் பெயர்',th_price:'விலை (₹/குவிண்டால்)',th_district:'மாவட்டம்',th_change:'மாற்றம்',th_date:'தேதி',
+    weather_tag:'நேரடி முன்னறிவிப்பு',weather_title:'மாவட்ட வானிலை',weather_desc:'அனைத்து தமிழ்நாடு மாவட்டங்களுக்கும் 7 நாள் முன்னறிவிப்பு. துல்லியமாக திட்டமிடுங்கள்.',
+    wth_district:'மாவட்டம்',wth_condition:'நிலை',wth_temp:'வெப்பம் (°C)',wth_humidity:'ஈரப்பதம் (%)',wth_rainfall:'மழை (மிமீ)',wth_wind:'காற்று (கி.மீ/மணி)',wth_advisory:'ஆலோசனை',
+    footer_desc:'செயற்கை நுண்ணறிவு மூலம் தமிழ்நாடு விவசாயிகளை வலுப்படுத்துதல். சிறந்த முடிவுகள், சிறந்த அறுவடை — உங்கள் மொழியில்.',
+    footer_links_title:'விரைவு இணைப்புகள்',footer_districts_title:'பகுதி',footer_contact_title:'தொடர்பு',footer_address:'TIDCO வளாகம், அண்ணா சாலை, சென்னை – 600 002',
+    footer_copy:'© 2025 Smart Agri AI. அனைத்து உரிமைகளும் பாதுகாக்கப்பட்டவை. தமிழ்நாடு விவசாயிகளுக்காக ❤️ செய்யப்பட்டது.',
+    footer_privacy:'தனியுரிமை கொள்கை',footer_terms:'பயன்பாட்டு விதிமுறைகள்',footer_support:'ஆதரவு',
+    toast_saved:'வரலாற்றில் சேமிக்கப்பட்டது!',toast_error:'அனைத்து புலங்களையும் நிரப்புங்கள்',toast_no_image:'முதலில் படத்தை பதிவேற்றுங்கள்',toast_detected:'நோய் வெற்றிகரமாக கண்டறியப்பட்டது'
+  }
+};
+
+let currentLang='en';
+function t(key){return(translations[currentLang]&&translations[currentLang][key])||translations['en'][key]||key;}
+
+function applyTranslations(){
+  document.querySelectorAll('[data-i18n]').forEach(el=>{
+    const key=el.getAttribute('data-i18n');
+    const val=t(key);
+    if(val) el.textContent=val;
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el=>{
+    const key=el.getAttribute('data-i18n-placeholder');
+    el.placeholder=t(key);
+  });
+  document.body.classList.toggle('tamil-mode',currentLang==='ta');
+}
+
+async function toggleLang(){
+  currentLang=currentLang==='en'?'ta':'en';
+  document.getElementById('langLabel').textContent=currentLang==='en'?'தமிழ்':'English';
+  document.getElementById('mobileLangBtn').textContent=currentLang==='en'?'Switch to தமிழ்':'Switch to English';
+  applyTranslations();
+  /* refresh tables with new language */
+  const mdata=await apiService.getMarketPrices(activeDistrict||'All');
+  renderMarketTable(mdata);
+  await renderWeather();
+  showToast(currentLang==='ta'?'தமிழ்':'English','info');
+}
+
+/* ══ NAV / SECTION ══ */
+let currentSection='home';
+function showSection(sec){
+  document.querySelectorAll('.page-section').forEach(s=>s.classList.remove('active'));
+  document.getElementById('section-'+sec).classList.add('active');
+  document.querySelectorAll('.nav-link').forEach(l=>l.classList.remove('active'));
+  const map={home:0,crop:1,disease:2,market:3,weather:4};
+  const nl=document.querySelectorAll('.nav-link')[map[sec]];
+  if(nl) nl.classList.add('active');
+  currentSection=sec;
+  window.scrollTo({top:0,behavior:'smooth'});
+  setTimeout(initFadeUp,100);
+}
+
+function toggleMenu(){document.getElementById('mobileMenu').classList.toggle('open')}
+function closeMenu(){document.getElementById('mobileMenu').classList.remove('open')}
+
+window.addEventListener('scroll',()=>{
+  document.getElementById('navbar').classList.toggle('scrolled',window.scrollY>20);
+});
+
+/* ══ FADE-UP ══ */
+function initFadeUp(){
+  const obs=new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{if(e.isIntersecting){e.target.classList.add('visible');obs.unobserve(e.target);}});
+  },{threshold:.12});
+  document.querySelectorAll('.fade-up:not(.visible)').forEach(el=>obs.observe(el));
+}
+
+/* ══ TOAST ══ */
+function showToast(msg,type='success'){
+  const tc=document.getElementById('toast-container');
+  const toast=document.createElement('div');
+  toast.className='toast toast-'+type;
+  const icons={success:'✅',error:'❌',info:'ℹ️'};
+  toast.innerHTML='<span>'+(icons[type]||'✅')+'</span><span>'+msg+'</span>';
+  tc.appendChild(toast);
+  setTimeout(()=>{
+    toast.classList.add('hiding');
+    setTimeout(()=>toast.remove(),320);
+  },3200);
+}
+
+/* ══ CROP PREDICTION ══ */
+async function predictCrop(){
+  const n=parseFloat(document.getElementById('inp_n').value);
+  const p=parseFloat(document.getElementById('inp_p').value);
+  const k=parseFloat(document.getElementById('inp_k').value);
+  const ph=parseFloat(document.getElementById('inp_ph').value);
+  const dist=document.getElementById('inp_district').value;
+
+  if(isNaN(n)||isNaN(p)||isNaN(k)||isNaN(ph)||!dist){
+    showToast(t('toast_error'),'error');
+    return;
+  }
+
+  const btn=document.querySelector('.btn-predict');
+  const orig=btn.textContent;
+  btn.textContent=currentLang==='ta'?'⏳ கணிக்கிறது...':'⏳ Predicting...';
+  btn.disabled=true;
+
+  try{
+    const data=await apiService.predictCrop({nitrogen:n,phosphorus:p,potassium:k,ph:ph,district:dist});
+    document.getElementById('res_icon').textContent=data.icon;
+    document.getElementById('res_name').textContent=data.crop_name;
+    document.getElementById('res_conf_pct').textContent=data.confidence+'%';
+    document.getElementById('res_desc').textContent=currentLang==='ta'?data.description_ta:data.description_en;
+    document.getElementById('crop-placeholder').style.display='none';
+    const rc=document.getElementById('crop-result');
+    rc.classList.add('show');
+    /* animate bar */
+    document.getElementById('conf_bar').style.width='0%';
+    setTimeout(()=>{document.getElementById('conf_bar').style.width=data.confidence+'%';},80);
+    showToast((currentLang==='ta'?'✅ சிறந்த பயிர்: ':'✅ Best Crop: ')+data.crop_name,'success');
+  }catch(err){
+    console.error(err);
+    showToast(currentLang==='ta'?'❌ பிழை ஏற்பட்டது':'❌ Something went wrong','error');
+  }finally{
+    btn.textContent=orig;
+    btn.disabled=false;
+  }
+}
+
+function saveToHistory(){showToast(t('toast_saved'),'success');}
+
+/* ══ DISEASE DETECTION ══ */
+let hasImage=false;
+
+function handleFileSelect(e){
+  const file=e.target.files[0];
+  if(file) previewFile(file);
+}
+function handleDrop(e){
+  e.preventDefault();
+  document.getElementById('uploadZone').classList.remove('dragover');
+  const file=e.dataTransfer.files[0];
+  if(file) previewFile(file);
+}
+function handleDragOver(e){e.preventDefault();document.getElementById('uploadZone').classList.add('dragover');}
+function handleDragLeave(){document.getElementById('uploadZone').classList.remove('dragover');}
+
+function previewFile(file){
+  const reader=new FileReader();
+  reader.onload=(ev)=>{
+    const img=document.getElementById('previewImg');
+    img.src=ev.target.result;
+    img.style.display='block';
+    hasImage=true;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function detectDisease(){
+  const fileInput=document.getElementById('fileInput');
+  if(!hasImage||!fileInput.files[0]){
+    showToast(t('toast_no_image'),'error');
+    return;
+  }
+  const btn=document.querySelector('.btn-detect');
+  const orig=btn.textContent;
+  btn.textContent=currentLang==='ta'?'⏳ கண்டறிகிறது...':'⏳ Detecting...';
+  btn.disabled=true;
+
+  try{
+    const data=await apiService.detectDisease(fileInput.files[0]);
+    document.getElementById('disease-placeholder').style.display='none';
+    const dr=document.getElementById('disease-result');
+    document.getElementById('dis_name').textContent=currentLang==='ta'?data.disease_name_ta:data.disease_name;
+
+    const sb=document.getElementById('dis_severity');
+    const sevMap={
+      high:{cls:'sev-high',en:'⚠ High Severity',   ta:'⚠ அதிக தீவிரம்'},
+      medium:{cls:'sev-med', en:'⚡ Medium Severity',ta:'⚡ நடுத்தர தீவிரம்'},
+      low:{cls:'sev-low',  en:'✅ Low Severity',    ta:'✅ குறைந்த தீவிரம்'}
+    };
+    const sev=sevMap[data.severity]||sevMap.medium;
+    sb.className='severity-badge '+sev.cls;
+    sb.textContent=currentLang==='ta'?sev.ta:sev.en;
+
+    document.getElementById('dis_conf').textContent=data.confidence+'%';
+    document.getElementById('dis_crop').textContent=currentLang==='ta'?data.crop_name_ta:data.crop_name;
+    document.getElementById('dis_treatment_text').textContent=currentLang==='ta'?data.treatment_ta:data.treatment_en;
+    dr.classList.add('show');
+    showToast(t('toast_detected'),'success');
+  }catch(err){
+    console.error(err);
+    showToast(currentLang==='ta'?'❌ நோய் கண்டறிய முடியவில்லை':'❌ Detection failed','error');
+  }finally{
+    btn.textContent=orig;
+    btn.disabled=false;
+  }
+}
+
+/* ══ MARKET ══ */
+let activeDistrict='All';
+
+async function filterMarket(dist,el){
+  activeDistrict=dist;
+  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  const data=await apiService.getMarketPrices(dist);
+  const search=(document.getElementById('marketSearch')||{value:''}).value.toLowerCase();
+  const filtered=search?data.filter(r=>r.crop.toLowerCase().includes(search)||r.crop_ta.includes(search)):data;
+  renderMarketTable(filtered);
+}
+
+async function searchMarket(val){
+  const data=await apiService.getMarketPrices(activeDistrict);
+  const filtered=data.filter(r=>r.crop.toLowerCase().includes(val.toLowerCase())||(r.crop_ta&&r.crop_ta.includes(val)));
+  renderMarketTable(filtered);
+}
+
+function renderMarketTable(data){
+  const tbody=document.getElementById('marketTableBody');
+  if(!tbody) return;
+  if(!data||!data.length){
+    tbody.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:2rem">'+(currentLang==='ta'?'தரவு இல்லை':'No data found')+'</td></tr>';
+    return;
+  }
+  tbody.innerHTML=data.map(r=>`
+    <tr>
+      <td><div class="crop-flag"><div class="crop-dot"></div>${currentLang==='ta'?r.crop_ta:r.crop}</div></td>
+      <td><strong>₹${r.price.toLocaleString()}</strong></td>
+      <td>${r.district}</td>
+      <td class="${r.up?'price-up':'price-down'}">${r.up?'↑':'↓'} ${r.change}</td>
+      <td style="color:var(--text-muted)">${r.date}</td>
+    </tr>`).join('');
+}
+
+/* ══ WEATHER ══ */
+async function renderWeather(){
+  const weatherArr=await apiService.getWeatherData();
+  const wc=document.getElementById('weatherCards');
+  const wt=document.getElementById('weatherTableBody');
+  if(!wc||!wt) return;
+
+  wc.innerHTML=weatherArr.slice(0,3).map(w=>`
+    <div class="weather-card">
+      <div class="wc-district">${w.district}</div>
+      <div class="wc-condition">${w.condition}</div>
+      <div class="wc-temp">${w.temp}°C</div>
+      <div class="wc-feels">${currentLang==='ta'?'உணர்வு நிலை':'Feels like'} ${w.feels}°C</div>
+      <div class="wc-stats">
+        <div class="wcs-item"><label>${currentLang==='ta'?'ஈரப்பதம்':'Humidity'}</label><span>${w.humidity}%</span></div>
+        <div class="wcs-item"><label>${currentLang==='ta'?'மழை':'Rainfall'}</label><span>${w.rainfall} mm</span></div>
+        <div class="wcs-item"><label>${currentLang==='ta'?'காற்று':'Wind'}</label><span>${w.wind} km/h</span></div>
+        <div class="wcs-item"><label>${currentLang==='ta'?'நிலை':'Status'}</label><span style="color:var(--green-light)">${currentLang==='ta'?w.condition_ta:w.condition_name}</span></div>
+      </div>
+    </div>`).join('');
+
+  wt.innerHTML=weatherArr.map(w=>`
+    <tr>
+      <td style="font-weight:600">${w.district}</td>
+      <td><div class="w-condition-cell">${w.condition} ${currentLang==='ta'?w.condition_ta:w.condition_name}</div></td>
+      <td>${w.temp}°C</td>
+      <td>${w.humidity}%</td>
+      <td>${w.rainfall} mm</td>
+      <td>${w.wind} km/h</td>
+      <td style="font-size:.8rem">${currentLang==='ta'?w.advisory_ta:w.advisory_en}</td>
+    </tr>`).join('');
+}
+
+/* ══ INIT ══ */
+document.addEventListener('DOMContentLoaded',async()=>{
+  applyTranslations();
+  initFadeUp();
+  /* load market table */
+  const mdata=await apiService.getMarketPrices('All');
+  renderMarketTable(mdata);
+  /* load weather */
+  await renderWeather();
+});
+</script>
+</body>
+</html>
